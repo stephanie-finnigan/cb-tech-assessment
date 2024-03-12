@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using TflApp.Library.Model;
 using TflApp.Library.Model.Configuration;
@@ -14,19 +15,18 @@ namespace TflApp.Library.BusinessLogic
 
     public class TflRoadLogic : ITflRoadLogic
     { 
-        private readonly IConfiguration _config;
+        private readonly AppConfig _config;
         private readonly ILogger<TflRoadLogic> _logger;
 
-        public TflRoadLogic(IConfiguration config, ILogger<TflRoadLogic> logger)
+        public TflRoadLogic(IOptions<AppConfig> ops, ILogger<TflRoadLogic> logger)
         {
-            _config = config;
+            _config = ops.Value;
             _logger = logger;
         }
 
         public async Task<StatusResponse> GetRoadStatuses(StatusRequest request)
         {
             using var _client = new HttpClient();
-            var _app = _config.GetRequiredSection("AppConfig").Get<AppConfig>();
 
             var ids = string.Join(",", request.RoadIds);
             var statuses = new List<AggregatedRoadStatus>();
@@ -36,12 +36,13 @@ namespace TflApp.Library.BusinessLogic
             {
                 _logger.LogInformation("Tfl request initiated.");
 
-                var response = await _client.GetAsync($"{_app.TflBaseAddress}/{_app.TflApi}/{ids}/Status?" +
-                    $"startDate={request.StartDate}&endDate={request.EndDate}&app_key={_app.AppKey}");
+                var response = await _client.GetAsync($"{_config.TflBaseAddress}/{_config.TflApi}/{ids}/Status?" +
+                    $"startDate={request.StartDate}&endDate={request.EndDate}&app_key={_config.AppKey}");
+
+                var stringResp = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var stringResp = await response.Content.ReadAsStringAsync();
                     var tflData = JsonConvert.DeserializeObject<List<JsonTflDeserializer>>(stringResp);
 
                     foreach (var data in tflData)
@@ -57,11 +58,11 @@ namespace TflApp.Library.BusinessLogic
                 }
                 else
                 {
-                    var stringResp = await response.Content.ReadAsStringAsync();
                     var tflError = JsonConvert.DeserializeObject<JsonTflErrorDeserializer>(stringResp);
 
                     error = new TflErrorResponse
                     {
+                        ErrorCode = 1,
                         ExceptionType = tflError.ExceptionType,
                         StatusCode = tflError.StatusCode,
                         HttpStatus = tflError.HttpStatus,
@@ -69,9 +70,15 @@ namespace TflApp.Library.BusinessLogic
                     };
                 }
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                return new StatusResponse { };
+                return new StatusResponse
+                {
+                    ErrorResponse = new TflErrorResponse
+                    {
+                        Message = ex.Message
+                    }
+                };
             }
 
             return new StatusResponse

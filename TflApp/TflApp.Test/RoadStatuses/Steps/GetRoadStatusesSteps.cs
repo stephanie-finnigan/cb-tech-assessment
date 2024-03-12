@@ -1,10 +1,12 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
+using System.Net;
 using TechTalk.SpecFlow;
 using TflApp.Library.BusinessLogic;
+using TflApp.Library.Helpers;
 using TflApp.Library.Model;
 using TflApp.Library.Model.Configuration;
 
@@ -13,17 +15,16 @@ namespace TflApp.Test.RoadStatuses.Steps
     [Binding, Scope(Feature = "Get Road Statuses")]
     internal class GetRoadStatusesSteps
     {
-        private IConfiguration _config;
-        private TflRoadLogic _logic;
-        private ILogger<TflRoadLogic> _logger = new NullLogger<TflRoadLogic>();
+        public WebApplicationFactory<Program> Factory { get; }
+        public ITflRoadLogic Logic { get; }
 
         private StatusRequest _getRequest;
         private StatusResponse _getResponse;
 
-        public GetRoadStatusesSteps(IConfiguration config)
+        public GetRoadStatusesSteps(WebApplicationFactory<Program> factory, ITflRoadLogic logic)
         {
-            _config = config;
-            _logic = new TflRoadLogic(_config, _logger);
+            Factory = factory;
+            Logic = logic;
         }
 
         [Given(@"A valid road id ""(.*)""")]
@@ -59,7 +60,7 @@ namespace TflApp.Test.RoadStatuses.Steps
         [When(@"The client runs")]
         public async Task WhenTheClientRuns()
         {
-            _getResponse = await _logic.GetRoadStatuses(_getRequest);
+            _getResponse = await Logic.GetRoadStatuses(_getRequest);
         }
 
         [Then(@"The road display name is ""(.*)""")]
@@ -78,7 +79,10 @@ namespace TflApp.Test.RoadStatuses.Steps
         {
             foreach (var data in _getResponse.RoadStatuses)
             {
-                data.RoadStatus.Should().Be(expSeverity);
+                data.RoadStatus.Should().NotBeNullOrEmpty();
+
+                var roadStatus = Helper.DisplayName<AggregatedRoadStatus>(nameof(AggregatedRoadStatus.RoadStatus));
+                roadStatus.Should().Be(expSeverity);
             }
 
             _getResponse.ErrorResponse.ExceptionType.Should().BeNullOrEmpty();
@@ -89,7 +93,10 @@ namespace TflApp.Test.RoadStatuses.Steps
         {
             foreach (var data in _getResponse.RoadStatuses)
             {
-                data.RoadStatusDescription.Should().Be(expSeverityDesc);
+                data.RoadStatusDescription.Should().NotBeNullOrEmpty();
+
+                var roadStatusDesc = Helper.DisplayName<AggregatedRoadStatus>(nameof(AggregatedRoadStatus.RoadStatusDescription));
+                roadStatusDesc.Should().Be(expSeverityDesc);
             }
 
             _getResponse.ErrorResponse.ExceptionType.Should().BeNullOrEmpty();
@@ -98,6 +105,7 @@ namespace TflApp.Test.RoadStatuses.Steps
         [Then(@"The response is returned with informative error message ""(.*)""")]
         public void ThenTheResponseIsReturnedWithInformativeErrorMessage(string expMessage)
         {
+            _getResponse.ErrorResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             _getResponse.ErrorResponse.Message.Should().Be(expMessage);
         }
 
